@@ -2,6 +2,7 @@ import os
 import sys
 import time
 import socket
+import json
 from datetime import datetime
 from flask import Flask, render_template, request, jsonify
 
@@ -19,22 +20,43 @@ app = Flask(
 )
 
 CARPETA_CHATS = os.path.join(RUTA_DATOS, "conversaciones")
+ESTADO_FILE = os.path.join(RUTA_DATOS, "estado_humano.json")
 
 DIAS_SEMANA = [
     "Lunes", "Martes", "Miércoles", "Jueves",
     "Viernes", "Sábado", "Domingo"
 ]
 
-pendiente_humano = {
-    "esperando": False,
-    "archivo": None,
-    "mensaje_inge": "",
-    "respuesta_lista": None
-}
-
 def asegurar_carpeta():
     if not os.path.exists(CARPETA_CHATS):
         os.makedirs(CARPETA_CHATS)
+
+def cargar_estado_humano():
+    if os.path.exists(ESTADO_FILE):
+        try:
+            with open(ESTADO_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {
+        "esperando": False,
+        "archivo": None,
+        "mensaje_inge": "",
+        "respuesta_lista": None
+    }
+
+def guardar_estado_humano(estado):
+    with open(ESTADO_FILE, "w", encoding="utf-8") as f:
+        json.dump(estado, f, ensure_ascii=False, indent=4)
+
+# Crear el archivo json de estado si no existe
+if not os.path.exists(ESTADO_FILE):
+    guardar_estado_humano({
+        "esperando": False,
+        "archivo": None,
+        "mensaje_inge": "",
+        "respuesta_lista": None
+    })
 
 def leer_titulo_chat(ruta_archivo):
     if not os.path.exists(ruta_archivo):
@@ -93,17 +115,6 @@ def guardar_mensaje(ruta_archivo, remitente, texto):
 
 def generar_respuesta_ia(texto_usuario, historial):
     return "nose"
-
-def obtener_ip_local():
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    try:
-        s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
-    except Exception:
-        ip = "127.0.0.1"
-    finally:
-        s.close()
-    return ip
 
 @app.route("/")
 def inicio():
@@ -168,21 +179,29 @@ def responder_ia(archivo):
     modo = datos.get("modo", "ia")
 
     if modo == "humano":
-        pendiente_humano["esperando"] = True
-        pendiente_humano["archivo"] = archivo
-        pendiente_humano["mensaje_inge"] = texto_usuario
-        pendiente_humano["respuesta_lista"] = None
+        estado = cargar_estado_humano()
+        estado["esperando"] = True
+        estado["archivo"] = archivo
+        estado["mensaje_inge"] = texto_usuario
+        estado["respuesta_lista"] = None
+        guardar_estado_humano(estado)
 
         inicio_espera = time.time()
-        while pendiente_humano["respuesta_lista"] is None:
-            if time.time() - inicio_espera > 120:
-                pendiente_humano["esperando"] = False
-                return jsonify({"error": "Tiempo agotado"}), 408
-            time.sleep(0.3)
+        while True:
+            estado_actual = cargar_estado_humano()
+            if estado_actual["respuesta_lista"] is not None:
+                respuesta = estado_actual["respuesta_lista"]
+                estado_actual["esperando"] = False
+                estado_actual["respuesta_lista"] = None
+                guardar_estado_humano(estado_actual)
+                break
 
-        respuesta = pendiente_humano["respuesta_lista"]
-        pendiente_humano["esperando"] = False
-        pendiente_humano["respuesta_lista"] = None
+            if time.time() - inicio_espera > 120:
+                estado_actual["esperando"] = False
+                guardar_estado_humano(estado_actual)
+                return jsonify({"error": "Tiempo agotado"}), 408
+            
+            time.sleep(0.5)
     else:
         historial = leer_conversacion(ruta)
         respuesta = generar_respuesta_ia(texto_usuario, historial)
@@ -192,10 +211,11 @@ def responder_ia(archivo):
 
 @app.route("/api/operador/estado", methods=["GET"])
 def estado_operador():
+    estado = cargar_estado_humano()
     return jsonify({
-        "esperando": pendiente_humano["esperando"],
-        "mensaje_inge": pendiente_humano["mensaje_inge"],
-        "archivo": pendiente_humano["archivo"]
+        "esperando": estado["esperando"],
+        "mensaje_inge": estado["mensaje_inge"],
+        "archivo": estado["archivo"]
     })
 
 @app.route("/api/operador/enviar", methods=["POST"])
@@ -204,7 +224,10 @@ def operador_enviar():
     respuesta = datos.get("respuesta", "").strip()
     if not respuesta:
         return jsonify({"error": "Vacío"}), 400
-    pendiente_humano["respuesta_lista"] = respuesta
+    
+    estado = cargar_estado_humano()
+    estado["respuesta_lista"] = respuesta
+    guardar_estado_humano(estado)
     return jsonify({"ok": True})
 
 @app.route("/api/chats/<archivo>", methods=["DELETE"])
@@ -223,11 +246,4 @@ def borrar_todos():
     return jsonify({"ok": True})
 
 if __name__ == "__main__":
-    print("=" * 55)
-    print(f" Ventana 1 (PC):      http://localhost/?modo=ia")
-    print(f" Ventana 2 (PC):      http://localhost/?modo=humano")
-    print(f" Panel Celular:       http://192.168.0.14:80/operador")
-    print("=" * 55)
-
-    # 0.0.0.0 permite que responda a localhost desde la PC y a la IP desde el celular
     app.run(host="0.0.0.0", port=80, debug=False, threaded=True)
