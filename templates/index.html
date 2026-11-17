@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Asistente IA</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="app-container">
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <h2>Conversaciones</h2>
+        <div class="sidebar-actions">
+          <button id="btn-nuevo" class="btn-primary" title="Nueva conversación">+ Nuevo</button>
+          <button id="btn-borrar-todo" class="btn-danger" title="Borrar todas">🗑️</button>
+        </div>
+      </div>
+      <div id="lista-chats" class="chat-list"></div>
+    </aside>
+
+    <main class="chat-area">
+      <header class="chat-header">
+        <div>
+          <h3 id="chat-titulo">Selecciona o crea un chat</h3>
+          <span id="chat-estado" class="subtitulo"></span>
+        </div>
+      </header>
+
+      <div id="mensajes-contenedor" class="messages-container">
+        <div class="empty-state">Elige una conversación de la izquierda o crea una nueva.</div>
+      </div>
+
+      <form id="form-mensaje" class="input-area">
+        <textarea id="input-texto" rows="1" placeholder="Escribe un mensaje..." disabled></textarea>
+        <button type="submit" id="btn-enviar" disabled>Enviar</button>
+      </form>
+    </main>
+  </div>
+
+  <script>
+    let chatActual = null;
+    let esperandoRespuesta = false;
+
+    const paramsUrl = new URLSearchParams(window.location.search);
+    const modoChat = paramsUrl.get("modo") || "ia";
+
+    const listaChatsEl = document.getElementById("lista-chats");
+    const mensajesEl = document.getElementById("mensajes-contenedor");
+    const tituloEl = document.getElementById("chat-titulo");
+    const estadoEl = document.getElementById("chat-estado");
+    const inputTexto = document.getElementById("input-texto");
+    const btnEnviar = document.getElementById("btn-enviar");
+
+    function calcularTiempoEscritura(textoUsuario) {
+      const baseMs = 650;
+      const msPorCaracter = 40;
+      const maximoMs = 4500;
+      return Math.min(baseMs + (textoUsuario.length * msPorCaracter), maximoMs);
+    }
+
+    function esperar(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    async function cargarListaChats() {
+      const res = await fetch("/api/chats");
+      const chats = await res.json();
+      listaChatsEl.innerHTML = "";
+
+      chats.forEach(chat => {
+        const item = document.createElement("div");
+        item.className = "chat-item" + (chatActual === chat.archivo ? " activo" : "");
+        item.innerHTML = `
+          <div class="chat-item-info" onclick="abrirChat('${chat.archivo}')">
+            <div class="chat-item-titulo">${chat.titulo}</div>
+            <div class="chat-item-meta">${chat.total} mensajes</div>
+          </div>
+          <button class="btn-delete-item" onclick="borrarChat('${chat.archivo}')" title="Borrar chat">✕</button>
+        `;
+        listaChatsEl.appendChild(item);
+      });
+    }
+
+    async function abrirChat(archivo) {
+      chatActual = archivo;
+      inputTexto.disabled = false;
+      btnEnviar.disabled = false;
+      cargarListaChats();
+
+      const res = await fetch(`/api/chats/${archivo}`);
+      const data = await res.json();
+
+      tituloEl.textContent = data.titulo;
+      estadoEl.textContent = "en línea";
+      mensajesEl.innerHTML = "";
+
+      data.mensajes.forEach(m => agregarBurbuja(m, false));
+      scrollAbajo();
+      inputTexto.focus();
+    }
+
+    function agregarBurbuja(msg, animar = true) {
+      const empty = mensajesEl.querySelector(".empty-state");
+      if (empty) empty.remove();
+
+      const div = document.createElement("div");
+      const esUsuario = msg.remitente === "USER";
+      div.className = `bubble ${esUsuario ? "user" : "ia"} ${animar ? "animar-entrada" : ""}`;
+
+      const textoSeguro = msg.texto
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/\n/g, "<br>");
+
+      div.innerHTML = `<div class="bubble-text">${textoSeguro}</div>`;
+      mensajesEl.appendChild(div);
+    }
+
+    function mostrarEscribiendo(activo) {
+      const existente = document.getElementById("burbuja-escribiendo");
+      if (activo) {
+        if (existente) return;
+        estadoEl.textContent = "escribiendo...";
+        const typingDiv = document.createElement("div");
+        typingDiv.id = "burbuja-escribiendo";
+        typingDiv.className = "typing-bubble animar-entrada";
+        typingDiv.innerHTML = `<span></span><span></span><span></span>`;
+        mensajesEl.appendChild(typingDiv);
+        scrollAbajo();
+      } else {
+        estadoEl.textContent = "en línea";
+        if (existente) existente.remove();
+      }
+    }
+
+    function scrollAbajo() {
+      mensajesEl.scrollTop = mensajesEl.scrollHeight;
+    }
+
+    document.getElementById("btn-nuevo").addEventListener("click", async () => {
+      const res = await fetch("/api/chats/nuevo", { method: "POST" });
+      const nuevo = await res.json();
+      await cargarListaChats();
+      abrirChat(nuevo.archivo);
+    });
+
+    document.getElementById("form-mensaje").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (!chatActual || esperandoRespuesta) return;
+
+      const texto = inputTexto.value.trim();
+      if (!texto) return;
+
+      inputTexto.value = "";
+      esperandoRespuesta = true;
+
+      const resUser = await fetch(`/api/chats/${chatActual}/mensaje`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ texto })
+      });
+
+      if (resUser.ok) {
+        const msgUser = await resUser.json();
+        agregarBurbuja(msgUser, true);
+        scrollAbajo();
+        cargarListaChats();
+
+        await esperar(300);
+        mostrarEscribiendo(true);
+
+        if (modoChat === "ia") {
+          const tiempoEspera = calcularTiempoEscritura(texto);
+          await esperar(tiempoEspera);
+        }
+
+        const resIa = await fetch(`/api/chats/${chatActual}/responder`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ texto_usuario: texto, modo: modoChat })
+        });
+
+        mostrarEscribiendo(false);
+
+        if (resIa.ok) {
+          const msgIa = await resIa.json();
+          agregarBurbuja(msgIa, true);
+          scrollAbajo();
+          cargarListaChats();
+        }
+      }
+
+      esperandoRespuesta = false;
+      inputTexto.focus();
+    });
+
+    inputTexto.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        document.getElementById("form-mensaje").dispatchEvent(new Event("submit"));
+      }
+    });
+
+    async function borrarChat(archivo) {
+      if (!confirm(`¿Eliminar esta conversación?`)) return;
+      await fetch(`/api/chats/${archivo}`, { method: "DELETE" });
+      if (chatActual === archivo) {
+        chatActual = null;
+        tituloEl.textContent = "Selecciona o crea un chat";
+        estadoEl.textContent = "";
+        mensajesEl.innerHTML = '<div class="empty-state">Chat eliminado.</div>';
+        inputTexto.disabled = true;
+        btnEnviar.disabled = true;
+      }
+      cargarListaChats();
+    }
+
+    document.getElementById("btn-borrar-todo").addEventListener("click", async () => {
+      if (!confirm("⚠️ ¿Borrar TODAS las conversaciones?")) return;
+      await fetch("/api/chats/borrar_todos", { method: "DELETE" });
+      chatActual = null;
+      tituloEl.textContent = "Selecciona o crea un chat";
+      estadoEl.textContent = "";
+      mensajesEl.innerHTML = '<div class="empty-state">Todas las conversaciones fueron eliminadas.</div>';
+      inputTexto.disabled = true;
+      btnEnviar.disabled = true;
+      cargarListaChats();
+    });
+
+    cargarListaChats();
+  </script>
+</body>
+</html>

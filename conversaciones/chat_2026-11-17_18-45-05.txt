@@ -1,0 +1,13 @@
+=== TITULO: Martes 17/11/2026 - 18:45:05 ===
+
+[1 | USER]
+hol TILIN
+
+[2 | IA]
+nose
+
+[3 | USER]
+HOLAAA
+
+[4 | IA]
+COMO ES TILIN

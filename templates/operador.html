@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Operador</title>
+  <style>
+    body {
+      background: #0b141a; color: #e9edef; font-family: sans-serif;
+      padding: 18px; display: flex; flex-direction: column; gap: 14px;
+    }
+    .card {
+      background: #202c33; padding: 16px; border-radius: 10px;
+      border-left: 5px solid #8696a0; transition: 0.2s;
+    }
+    .card.activo {
+      border-left-color: #00a884;
+      background: #172d28;
+    }
+    .label { font-size: 0.85rem; color: #8696a0; margin-bottom: 6px; }
+    .card.activo .label { color: #00a884; font-weight: bold; }
+    .msg-inge { font-size: 1.2rem; font-weight: bold; color: #fff; word-wrap: break-word; }
+    textarea {
+      width: 100%; height: 110px; background: #2a3942; color: #fff;
+      border: 1px solid #374852; border-radius: 8px; padding: 12px; font-size: 1.05rem;
+      box-sizing: border-box; resize: none;
+    }
+    button {
+      background: #00a884; color: #111b21; border: none; padding: 15px;
+      border-radius: 8px; font-size: 1.1rem; font-weight: bold; width: 100%;
+    }
+    button:disabled { opacity: 0.35; }
+  </style>
+</head>
+<body>
+  <div id="caja-estado" class="card">
+    <div class="label" id="estado-texto">Esperando mensaje del ingeniero...</div>
+    <div class="msg-inge" id="texto-inge">—</div>
+  </div>
+
+  <textarea id="respuesta-input" placeholder="Escribe tu respuesta aquí..." disabled></textarea>
+  <button id="btn-responder" disabled>Enviar respuesta</button>
+
+  <script>
+    const cajaEstado = document.getElementById("caja-estado");
+    const estadoTexto = document.getElementById("estado-texto");
+    const textoInge = document.getElementById("texto-inge");
+    const inputResp = document.getElementById("respuesta-input");
+    const btnResp = document.getElementById("btn-responder");
+    let yaNotificado = false;
+
+    setInterval(async () => {
+      try {
+        const res = await fetch("/api/operador/estado");
+        const data = await res.json();
+
+        if (data.esperando) {
+          cajaEstado.classList.add("activo");
+          estadoTexto.textContent = "Mensaje a responder:";
+          textoInge.textContent = data.mensaje_inge;
+          inputResp.disabled = false;
+          btnResp.disabled = false;
+
+          if (!yaNotificado) {
+            if (navigator.vibrate) navigator.vibrate([150, 80, 150]);
+            inputResp.focus();
+            yaNotificado = true;
+          }
+        } else {
+          cajaEstado.classList.remove("activo");
+          estadoTexto.textContent = "Esperando mensaje ...";
+          textoInge.textContent = "—";
+          inputResp.disabled = true;
+          btnResp.disabled = true;
+          yaNotificado = false;
+        }
+      } catch (err) {}
+    }, 600);
+
+    async function enviarRespuesta() {
+      const respuesta = inputResp.value.trim();
+      if (!respuesta) return;
+
+      btnResp.disabled = true;
+      await fetch("/api/operador/enviar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ respuesta })
+      });
+      inputResp.value = "";
+    }
+
+    btnResp.addEventListener("click", enviarRespuesta);
+
+    inputResp.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        enviarRespuesta();
+      }
+    });
+  </script>
+</body>
+</html>
