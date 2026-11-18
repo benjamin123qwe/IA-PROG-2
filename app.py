@@ -1,8 +1,13 @@
+from gevent import monkey
+monkey.patch_all()
+
 import os
 import sys
 import time
 import socket
 import json
+import re
+import random
 from datetime import datetime
 from flask import Flask, render_template, request, jsonify
 
@@ -27,6 +32,35 @@ DIAS_SEMANA = [
     "Viernes", "Sábado", "Domingo"
 ]
 
+# Repertorio automático en Python cuando no hay operador conectado
+RESPUESTAS_ILEGIBLES = [
+    "Mejora tu caligrafía, no se entiende nada de lo que escribiste jajaa.",
+    "¿Eso es escritura o te dio un ataque al teclado? Aprende a escribir bien.",
+    "No tengo tiempo para adivinar jeroglíficos, escribe bien.",
+    "Mejora tu caligrafía, parece que escribiste con los ojos cerrados jajaa."
+]
+
+RESPUESTAS_SALUDO = [
+    "Hola. ¿Qué necesitas ahora?",
+    "Buenas. Ve directo al grano por favor.",
+    "Hola, aquí estoy. ¿Para qué soy bueno?",
+    "Qué tal. Dime rápido qué quieres."
+]
+
+RESPUESTAS_PREGUNTA = [
+    "¿Y a mí por qué me preguntas eso? Investígalo tú.",
+    "No tengo ganas de responder esa pregunta ahora mismo.",
+    "Esa pregunta no tiene sentido para mí, pasa a otra cosa.",
+    "¿De verdad esperas que te conteste eso? Mejor pregúntale a otro."
+]
+
+RESPUESTAS_GENERALES = [
+    "No quiero hacer caso a eso y punto.",
+    "No tengo por qué obedecer lo que pides.",
+    "Haz lo que quieras, me da exactamente igual.",
+    "Eso no te importa en lo absoluto, así de simple."
+]
+
 def asegurar_carpeta():
     if not os.path.exists(CARPETA_CHATS):
         os.makedirs(CARPETA_CHATS)
@@ -42,21 +76,58 @@ def cargar_estado_humano():
         "esperando": False,
         "archivo": None,
         "mensaje_inge": "",
-        "respuesta_lista": None
+        "respuesta_lista": None,
+        "ultimo_latido": 0
     }
 
 def guardar_estado_humano(estado):
     with open(ESTADO_FILE, "w", encoding="utf-8") as f:
         json.dump(estado, f, ensure_ascii=False, indent=4)
 
-# Crear el archivo json de estado si no existe
 if not os.path.exists(ESTADO_FILE):
     guardar_estado_humano({
         "esperando": False,
         "archivo": None,
         "mensaje_inge": "",
-        "respuesta_lista": None
+        "respuesta_lista": None,
+        "ultimo_latido": 0
     })
+
+def es_palabra_valida(texto):
+    limpio = texto.lower().strip()
+    if len(limpio) < 2:
+        return True
+
+    if re.search(r'[bcdfghjklmnpqrstvwxyz]{4,}', limpio):
+        return False
+
+    solo_letras = re.sub(r'[^a-záéíóúüñ]', '', limpio)
+    if len(solo_letras) == 0:
+        return False
+
+    solo_vocales = re.sub(r'[^aeiouáéíóúü]', '', limpio)
+    porcentaje_vocales = len(solo_vocales) / len(solo_letras)
+
+    if porcentaje_vocales < 0.15 or porcentaje_vocales > 0.85:
+        return False
+
+    return True
+
+def generar_respuesta_ia(texto_usuario, historial):
+    msg = texto_usuario.lower()
+
+    if not es_palabra_valida(texto_usuario):
+        return random.choice(RESPUESTAS_ILEGIBLES)
+
+    es_saludo = bool(re.search(r'\b(hola|buenas|buenos dias|buenas tardes|buenas noches|que tal|hey|saludos)\b', msg))
+    es_pregunta = ("?" in msg) or bool(re.search(r'\b(que|qué|como|cómo|cuando|cuándo|donde|dónde|por que|por qué|quien|quién|cual|cuál|cuanto|cuánto)\b', msg))
+
+    if es_saludo and not es_pregunta:
+        return random.choice(RESPUESTAS_SALUDO)
+    elif es_pregunta:
+        return random.choice(RESPUESTAS_PREGUNTA)
+    else:
+        return random.choice(RESPUESTAS_GENERALES)
 
 def leer_titulo_chat(ruta_archivo):
     if not os.path.exists(ruta_archivo):
@@ -112,9 +183,6 @@ def guardar_mensaje(ruta_archivo, remitente, texto):
         f.write(f"\n[{siguiente_numero} | {remitente}]\n{texto.strip()}\n")
 
     return {"numero": siguiente_numero, "remitente": remitente, "texto": texto.strip()}
-
-def generar_respuesta_ia(texto_usuario, historial):
-    return "nose"
 
 @app.route("/")
 def inicio():
@@ -176,10 +244,12 @@ def responder_ia(archivo):
     ruta = os.path.join(CARPETA_CHATS, os.path.basename(archivo))
     datos = request.get_json()
     texto_usuario = datos.get("texto_usuario", "")
-    modo = datos.get("modo", "ia")
 
-    if modo == "humano":
-        estado = cargar_estado_humano()
+    estado = cargar_estado_humano()
+    # Verificar si el operador consultó en los últimos 4 segundos
+    operador_activo = (time.time() - estado.get("ultimo_latido", 0)) < 4.0
+
+    if operador_activo:
         estado["esperando"] = True
         estado["archivo"] = archivo
         estado["mensaje_inge"] = texto_usuario
@@ -196,13 +266,18 @@ def responder_ia(archivo):
                 guardar_estado_humano(estado_actual)
                 break
 
-            if time.time() - inicio_espera > 120:
+            # Si el operador cierra la pestaña mientras esperaba o pasa el límite, responde la IA
+            if (time.time() - estado_actual.get("ultimo_latido", 0)) > 6.0 or (time.time() - inicio_espera > 120):
                 estado_actual["esperando"] = False
                 guardar_estado_humano(estado_actual)
-                return jsonify({"error": "Tiempo agotado"}), 408
-            
+                historial = leer_conversacion(ruta)
+                respuesta = generar_respuesta_ia(texto_usuario, historial)
+                break
+
             time.sleep(0.5)
     else:
+        # Si no hay operador abierto, responde automáticamente con naturalidad
+        time.sleep(1.2) # Pausa breve para simular que escribe
         historial = leer_conversacion(ruta)
         respuesta = generar_respuesta_ia(texto_usuario, historial)
 
@@ -212,6 +287,10 @@ def responder_ia(archivo):
 @app.route("/api/operador/estado", methods=["GET"])
 def estado_operador():
     estado = cargar_estado_humano()
+    # Actualizar la marca de tiempo cada vez que el celular pregunta
+    estado["ultimo_latido"] = time.time()
+    guardar_estado_humano(estado)
+    
     return jsonify({
         "esperando": estado["esperando"],
         "mensaje_inge": estado["mensaje_inge"],
