@@ -1,4 +1,4 @@
-* {
+{
   box-sizing: border-box;
   margin: 0;
   padding: 0;
@@ -8,7 +8,7 @@ body {
   background-color: #0b141a;
   color: #e9edef;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  height: 100vh;
+  height: 100dvh; /* Usa dvh para evitar problemas con las barras de los celulares */
   display: flex;
   justify-content: center;
   align-items: center;
@@ -18,17 +18,21 @@ body {
 .app-container {
   display: flex;
   width: 100vw;
-  height: 100vh;
+  height: 100dvh;
   background-color: #111b21;
+  position: relative;
+  overflow: hidden;
 }
 
 /* Sidebar */
 .sidebar {
   width: 380px;
+  min-width: 380px;
   background-color: #111b21;
   border-right: 1px solid #222d34;
   display: flex;
   flex-direction: column;
+  height: 100%;
 }
 
 .sidebar-header {
@@ -136,6 +140,8 @@ body {
   background-color: #0b141a;
   background-image: radial-gradient(circle, rgba(255,255,255,0.03) 1px, transparent 1px);
   background-size: 24px 24px;
+  height: 100%;
+  min-width: 0; /* Evita que flexbox desborde contenedores */
 }
 
 .chat-header {
@@ -150,6 +156,9 @@ body {
 .chat-header h3 {
   font-size: 1rem;
   color: #e9edef;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .subtitulo {
@@ -175,7 +184,7 @@ body {
 
 /* Burbujas de Chat */
 .bubble {
-  max-width: 65%;
+  max-width: 75%; /* Ajustado ligeramente para celulares */
   padding: 8px 12px;
   border-radius: 8px;
   font-size: 0.95rem;
@@ -281,4 +290,38 @@ body {
 .input-area button:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+/* ==========================================
+   ADAPTABILIDAD MÓVIL (PANTALLAS < 768px)
+   ========================================== */
+@media (max-width: 768px) {
+  .app-container {
+    position: relative;
+  }
+
+  /* Por defecto en móvil, la sidebar ocupa toda la pantalla */
+  .sidebar {
+    width: 100%;
+    min-width: 100%;
+    position: absolute;
+    left: 0;
+    top: 0;
+    z-index: 2;
+    transition: transform 0.25s ease-in-out;
+  }
+
+  /* El área de chat se oculta al fondo inicialmente */
+  .chat-area {
+    width: 100%;
+    position: absolute;
+    left: 0;
+    top: 0;
+    z-index: 1;
+  }
+
+  /* Clase dinámica que puedes activar con JS cuando abres un chat en móvil */
+  .app-container.chat-abierto .sidebar {
+    transform: translateX(-100%);
+  }
 }
