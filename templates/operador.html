@@ -58,7 +58,7 @@
   <textarea id="respuesta-input" placeholder="Escribe tu respuesta aquí..." disabled></textarea>
   <button id="btn-responder" class="btn-main" disabled>Enviar respuesta</button>
 
-  <button id="btn-ambigua" class="btn-ambigua" onclick="enviarAmbiguaInteligente()" disabled>⚡ Respuesta ambigua</button>
+  <button id="btn-ambigua" class="btn-ambigua" onclick="enviarAmbiguaInteligente()" disabled>Respuesta Automatica</button>
 
   <script>
     const cajaEstado = document.getElementById("caja-estado");
@@ -69,6 +69,15 @@
     const btnAmbigua = document.getElementById("btn-ambigua");
     let yaNotificado = false;
 
+    // 1. Respuestas para texto ilegible o tipo "fjaieeaiofia"
+    const respuestasInentendibles = [
+      "Mejora tu caligrafía, no se entiende nada de lo que escribiste jajaa.",
+      "¿Eso es escritura o te dio un ataque al teclado? Aprende a escribir bien.",
+      "No tengo tiempo para adivinar jeroglíficos, escribe bien.",
+      "Mejora tu caligrafía, parece que escribiste con los ojos cerrados jajaa."
+    ];
+
+    // 2. Respuestas para saludos
     const respuestasSaludo = [
       "Hola. ¿Qué necesitas ahora?",
       "Buenas. Ve directo al grano por favor.",
@@ -76,6 +85,7 @@
       "Qué tal. Dime rápido qué quieres."
     ];
 
+    // 3. Respuestas para preguntas
     const respuestasPregunta = [
       "¿Y a mí por qué me preguntas eso? Investígalo tú.",
       "No tengo ganas de responder esa pregunta ahora mismo.",
@@ -83,9 +93,10 @@
       "¿De verdad esperas que te conteste eso? Mejor pregúntale a otro."
     ];
 
+    // 4. Respuestas generales / evasivas
     const respuestasGenerales = [
       "No quiero hacer caso a eso y punto.",
-      "No tengo por qué obedecer lo que me pides.",
+      "No tengo por qué obedecer lo que pides.",
       "Haz lo que quieras, me da exactamente igual.",
       "Eso no te importa en lo absoluto, así de simple."
     ];
@@ -142,10 +153,15 @@
       const msg = textoInge.textContent.toLowerCase();
       let grupoElegido = respuestasGenerales;
 
+      // Detector de texto inentendible (si tiene 5 o más consonantes seguidas o no tiene vocales)
+      const esInentendible = /[bcdfghjklmnpqrstvwxyz]{5,}/i.test(msg) || (msg.length > 4 && !/[aeiouáéíóú]/i.test(msg));
+
       const esSaludo = /\b(hola|buenas|buenos dias|buenas tardes|buenas noches|que tal|hey|saludos)\b/.test(msg);
       const esPregunta = msg.includes("?") || /\b(que|qué|como|cómo|cuando|cuándo|donde|dónde|por que|por qué|quien|quién|cual|cuál|cuanto|cuánto)\b/.test(msg);
 
-      if (esSaludo && !esPregunta) {
+      if (esInentendible) {
+        grupoElegido = respuestasInentendibles;
+      } else if (esSaludo && !esPregunta) {
         grupoElegido = respuestasSaludo;
       } else if (esPregunta) {
         grupoElegido = respuestasPregunta;
