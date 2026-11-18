@@ -7,29 +7,47 @@
   <style>
     body {
       background: #0b141a; color: #e9edef; font-family: sans-serif;
-      padding: 18px; display: flex; flex-direction: column; gap: 14px;
+      padding: 14px; display: flex; flex-direction: column; gap: 12px;
+      max-width: 600px; margin: 0 auto;
     }
     .card {
-      background: #202c33; padding: 16px; border-radius: 10px;
+      background: #202c33; padding: 14px; border-radius: 10px;
       border-left: 5px solid #8696a0; transition: 0.2s;
     }
     .card.activo {
       border-left-color: #00a884;
       background: #172d28;
     }
-    .label { font-size: 0.85rem; color: #8696a0; margin-bottom: 6px; }
+    .label { font-size: 0.8rem; color: #8696a0; margin-bottom: 4px; }
     .card.activo .label { color: #00a884; font-weight: bold; }
-    .msg-inge { font-size: 1.2rem; font-weight: bold; color: #fff; word-wrap: break-word; }
+    .msg-inge { font-size: 1.1rem; font-weight: bold; color: #fff; word-wrap: break-word; }
+    
     textarea {
-      width: 100%; height: 110px; background: #2a3942; color: #fff;
-      border: 1px solid #374852; border-radius: 8px; padding: 12px; font-size: 1.05rem;
+      width: 100%; height: 90px; background: #2a3942; color: #fff;
+      border: 1px solid #374852; border-radius: 8px; padding: 10px; font-size: 1rem;
       box-sizing: border-box; resize: none;
     }
-    button {
-      background: #00a884; color: #111b21; border: none; padding: 15px;
-      border-radius: 8px; font-size: 1.1rem; font-weight: bold; width: 100%;
+    
+    .btn-main {
+      background: #00a884; color: #111b21; border: none; padding: 12px;
+      border-radius: 8px; font-size: 1rem; font-weight: bold; width: 100%;
     }
-    button:disabled { opacity: 0.35; }
+
+    /* Estilo para el botón de respuesta ambigua automática */
+    .btn-ambigua {
+      background: #1f3b4d; color: #38ef7d; border: 1px solid #2a5298;
+      padding: 14px; border-radius: 8px; font-size: 1.05rem; font-weight: bold;
+      cursor: pointer; text-align: center; width: 100%; transition: 0.2s;
+    }
+    .btn-ambigua:hover:not(:disabled) {
+      background: #284c63;
+      border-color: #38ef7d;
+    }
+
+    button:disabled, .btn-ambigua:disabled { 
+      opacity: 0.35; 
+      cursor: not-allowed;
+    }
   </style>
 </head>
 <body>
@@ -39,7 +57,10 @@
   </div>
 
   <textarea id="respuesta-input" placeholder="Escribe tu respuesta aquí..." disabled></textarea>
-  <button id="btn-responder" disabled>Enviar respuesta</button>
+  <button id="btn-responder" class="btn-main" disabled>Enviar respuesta</button>
+
+  <!-- Único botón para respuesta automática ambigua -->
+  <button id="btn-ambigua" class="btn-ambigua" onclick="enviarAmbiguaAleatoria()" disabled>⚡ Respuesta ambigua</button>
 
   <script>
     const cajaEstado = document.getElementById("caja-estado");
@@ -47,7 +68,18 @@
     const textoInge = document.getElementById("texto-inge");
     const inputResp = document.getElementById("respuesta-input");
     const btnResp = document.getElementById("btn-responder");
+    const btnAmbigua = document.getElementById("btn-ambigua");
     let yaNotificado = false;
+
+    // Las 6 respuestas ambiguas, cortantes y evasivas (sin groserías)
+    const frasesAmbiguas = [
+      "No quiero responder a eso y punto.",
+      "¿Y a mí por qué me preguntas semejante tontería?",
+      "No tengo por qué hacerte caso en lo que pides.",
+      "Pregúntale a otro, hoy no tengo ganas de explicar.",
+      "Eso no te importa en lo absoluto, así de simple.",
+      "Haz lo que quieras, me da exactamente igual."
+    ];
 
     setInterval(async () => {
       try {
@@ -60,10 +92,10 @@
           textoInge.textContent = data.mensaje_inge;
           inputResp.disabled = false;
           btnResp.disabled = false;
+          btnAmbigua.disabled = false;
 
           if (!yaNotificado) {
             if (navigator.vibrate) navigator.vibrate([150, 80, 150]);
-            inputResp.focus();
             yaNotificado = true;
           }
         } else {
@@ -72,30 +104,41 @@
           textoInge.textContent = "—";
           inputResp.disabled = true;
           btnResp.disabled = true;
+          btnAmbigua.disabled = true;
           yaNotificado = false;
         }
       } catch (err) {}
     }, 600);
 
-    async function enviarRespuesta() {
-      const respuesta = inputResp.value.trim();
-      if (!respuesta) return;
+    async function enviarTexto(texto) {
+      if (!texto) return;
 
       btnResp.disabled = true;
+      inputResp.disabled = true;
+      btnAmbigua.disabled = true;
+
       await fetch("/api/operador/enviar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ respuesta })
+        body: JSON.stringify({ respuesta: texto })
       });
       inputResp.value = "";
     }
 
-    btnResp.addEventListener("click", enviarRespuesta);
+    btnResp.addEventListener("click", () => {
+      enviarTexto(inputResp.value.trim());
+    });
+
+    function enviarAmbiguaAleatoria() {
+      // Elige una de las 6 frases al azar cada vez que se pulsa
+      const fraseAleatoria = frasesAmbiguas[Math.floor(Math.random() * frasesAmbiguas.length)];
+      enviarTexto(fraseAleatoria);
+    }
 
     inputResp.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
-        enviarRespuesta();
+        enviarTexto(inputResp.value.trim());
       }
     });
   </script>
