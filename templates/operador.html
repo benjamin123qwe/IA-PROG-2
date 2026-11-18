@@ -69,15 +69,14 @@
     const btnAmbigua = document.getElementById("btn-ambigua");
     let yaNotificado = false;
 
-    // 1. Respuestas para texto ilegible o tipo "fjaieeaiofia"
-    const respuestasInentendibles = [
+    // Repertorio de respuestas automáticas
+    const respuestasIlegibles = [
       "Mejora tu caligrafía, no se entiende nada de lo que escribiste jajaa.",
       "¿Eso es escritura o te dio un ataque al teclado? Aprende a escribir bien.",
       "No tengo tiempo para adivinar jeroglíficos, escribe bien.",
       "Mejora tu caligrafía, parece que escribiste con los ojos cerrados jajaa."
     ];
 
-    // 2. Respuestas para saludos
     const respuestasSaludo = [
       "Hola. ¿Qué necesitas ahora?",
       "Buenas. Ve directo al grano por favor.",
@@ -85,7 +84,6 @@
       "Qué tal. Dime rápido qué quieres."
     ];
 
-    // 3. Respuestas para preguntas
     const respuestasPregunta = [
       "¿Y a mí por qué me preguntas eso? Investígalo tú.",
       "No tengo ganas de responder esa pregunta ahora mismo.",
@@ -93,13 +91,32 @@
       "¿De verdad esperas que te conteste eso? Mejor pregúntale a otro."
     ];
 
-    // 4. Respuestas generales / evasivas
     const respuestasGenerales = [
       "No quiero hacer caso a eso y punto.",
       "No tengo por qué obedecer lo que pides.",
       "Haz lo que quieras, me da exactamente igual.",
       "Eso no te importa en lo absoluto, así de simple."
     ];
+
+    // Validador lingüístico para saber si es texto real o spam de teclado
+    function esPalabraValida(texto) {
+      const limpio = texto.toLowerCase().trim();
+      if (limpio.length < 2) return true;
+
+      const muchasConsonantes = /[bcdfghjklmnpqrstvwxyz]{4,}/i.test(limpio);
+      if (muchasConsonantes) return false;
+
+      const totalLetras = limpio.replace(/[^a-záéíóúüñ]/g, "").length;
+      if (totalLetras === 0) return false;
+
+      const totalVocales = limpio.replace(/[^aeiouáéíóúü]/g, "").length;
+      const porcentajeVocales = totalVocales / totalLetras;
+
+      if (porcentajeVocales < 0.15 || porcentajeVocales > 0.85) {
+        return false;
+      }
+      return true;
+    }
 
     setInterval(async () => {
       try {
@@ -150,17 +167,21 @@
     });
 
     function enviarAmbiguaInteligente() {
-      const msg = textoInge.textContent.toLowerCase();
+      const msgOriginal = textoInge.textContent;
+      const msg = msgOriginal.toLowerCase();
       let grupoElegido = respuestasGenerales;
 
-      // Detector de texto inentendible (si tiene 5 o más consonantes seguidas o no tiene vocales)
-      const esInentendible = /[bcdfghjklmnpqrstvwxyz]{5,}/i.test(msg) || (msg.length > 4 && !/[aeiouáéíóú]/i.test(msg));
+      // 1. Evaluar si es texto inentendible / caligrafía mala
+      const esIlegible = !esPalabraValida(msgOriginal);
 
+      // 2. Evaluar si es saludo
       const esSaludo = /\b(hola|buenas|buenos dias|buenas tardes|buenas noches|que tal|hey|saludos)\b/.test(msg);
+      
+      // 3. Evaluar si es pregunta
       const esPregunta = msg.includes("?") || /\b(que|qué|como|cómo|cuando|cuándo|donde|dónde|por que|por qué|quien|quién|cual|cuál|cuanto|cuánto)\b/.test(msg);
 
-      if (esInentendible) {
-        grupoElegido = respuestasInentendibles;
+      if (esIlegible) {
+        grupoElegido = respuestasIlegibles;
       } else if (esSaludo && !esPregunta) {
         grupoElegido = respuestasSaludo;
       } else if (esPregunta) {
