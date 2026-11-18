@@ -4,7 +4,6 @@ monkey.patch_all()
 import os
 import sys
 import time
-import socket
 import json
 import re
 import random
@@ -246,7 +245,6 @@ def responder_ia(archivo):
     texto_usuario = datos.get("texto_usuario", "")
 
     estado = cargar_estado_humano()
-    # Verificar si el operador consultó en los últimos 4 segundos
     operador_activo = (time.time() - estado.get("ultimo_latido", 0)) < 4.0
 
     if operador_activo:
@@ -266,7 +264,6 @@ def responder_ia(archivo):
                 guardar_estado_humano(estado_actual)
                 break
 
-            # Si el operador cierra la pestaña mientras esperaba o pasa el límite, responde la IA
             if (time.time() - estado_actual.get("ultimo_latido", 0)) > 6.0 or (time.time() - inicio_espera > 120):
                 estado_actual["esperando"] = False
                 guardar_estado_humano(estado_actual)
@@ -276,8 +273,7 @@ def responder_ia(archivo):
 
             time.sleep(0.5)
     else:
-        # Si no hay operador abierto, responde automáticamente con naturalidad
-        time.sleep(1.2) # Pausa breve para simular que escribe
+        time.sleep(1.2)
         historial = leer_conversacion(ruta)
         respuesta = generar_respuesta_ia(texto_usuario, historial)
 
@@ -287,7 +283,6 @@ def responder_ia(archivo):
 @app.route("/api/operador/estado", methods=["GET"])
 def estado_operador():
     estado = cargar_estado_humano()
-    # Actualizar la marca de tiempo cada vez que el celular pregunta
     estado["ultimo_latido"] = time.time()
     guardar_estado_humano(estado)
     
