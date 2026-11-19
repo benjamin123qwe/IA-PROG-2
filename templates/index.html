@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Chat IA - Panel Principal</title>
   <style>
-    {
+    * {
       box-sizing: border-box;
       margin: 0;
       padding: 0;
@@ -400,6 +400,14 @@
       appContainer.classList.toggle("mostrar-sidebar");
     });
 
+    function actualizarContadorHeader(cantidadOpcional = null) {
+      if (!chatActual) return;
+      const total = cantidadOpcional !== null
+        ? cantidadOpcional
+        : document.querySelectorAll("#messagesContainer .bubble").length;
+      document.getElementById("chat-subtitulo").textContent = `${total} ${total === 1 ? "mensaje" : "mensajes"}`;
+    }
+
     async function cargarListaChats() {
       try {
         const res = await fetch("/api/chats");
@@ -418,11 +426,15 @@
           item.innerHTML = `
             <div class="chat-item-info" onclick="seleccionarChat('${chat.archivo}')">
               <div class="chat-item-titulo">${chat.titulo}</div>
-              <div class="chat-item-meta">${chat.total} mensajes</div>
+              <div class="chat-item-meta">${chat.total} ${chat.total === 1 ? "mensaje" : "mensajes"}</div>
             </div>
             <button class="btn-delete-item" onclick="event.stopPropagation(); borrarChat('${chat.archivo}')">✕</button>
           `;
           listaDiv.appendChild(item);
+
+          if (chat.archivo === chatActual) {
+            actualizarContadorHeader(chat.total);
+          }
         });
       } catch (err) {
         console.error("Error al cargar chats:", err);
@@ -433,8 +445,8 @@
       try {
         const res = await fetch("/api/chats/nuevo", { method: "POST" });
         const data = await res.json();
-        seleccionarChat(data.archivo);
-        cargarListaChats();
+        await seleccionarChat(data.archivo);
+        await cargarListaChats();
       } catch (err) {
         console.error("Error al crear chat:", err);
       }
@@ -450,26 +462,27 @@
       try {
         const res = await fetch(`/api/chats/${archivo}`);
         const data = await res.json();
+        const mensajes = Array.isArray(data.mensajes) ? data.mensajes : [];
 
         document.getElementById("chat-titulo-actual").textContent = data.titulo;
-        document.getElementById("chat-subtitulo").textContent = `${data.mensajes.length} mensajes`;
         document.getElementById("inputArea").style.display = "flex";
 
         const container = document.getElementById("messagesContainer");
         container.innerHTML = "";
 
-        if (data.mensajes.length === 0) {
+        if (mensajes.length === 0) {
           container.innerHTML = '<div class="empty-state">Escribe un mensaje para comenzar la conversación.</div>';
         } else {
-          data.mensajes.forEach(msg => agregarBurbujaUI(msg.remitente, msg.texto, false));
+          mensajes.forEach(msg => agregarBurbujaUI(msg.remitente, msg.texto, false, false));
         }
+        actualizarContadorHeader(mensajes.length);
         container.scrollTop = container.scrollHeight;
       } catch (err) {
         console.error("Error al cargar mensajes:", err);
       }
     }
 
-    function agregarBurbujaUI(remitente, texto, animar = true) {
+    function agregarBurbujaUI(remitente, texto, animar = true, refrescarContador = true) {
       const container = document.getElementById("messagesContainer");
       
       const emptyState = container.querySelector(".empty-state");
@@ -479,6 +492,10 @@
       bubble.className = `bubble ${remitente.toLowerCase() === 'user' ? 'user' : 'ia'} ${animar ? 'animar-entrada' : ''}`;
       bubble.textContent = texto;
       container.appendChild(bubble);
+
+      if (refrescarContador) {
+        actualizarContadorHeader();
+      }
       container.scrollTop = container.scrollHeight;
     }
 
@@ -515,6 +532,7 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ texto })
         });
+        cargarListaChats();
 
         mostrarEscribiendo();
 
