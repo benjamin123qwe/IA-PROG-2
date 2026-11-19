@@ -4,3 +4,9 @@ hla
 
 [2 | IA]
 comoes
+
+[3 | USER]
+helou madafaker
+
+[4 | IA]
+Eso no te importa en lo absoluto, así de simple.

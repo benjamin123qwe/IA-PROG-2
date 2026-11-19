@@ -1,6 +1,7 @@
 {
     "esperando": false,
-    "archivo": null,
-    "mensaje_inge": "",
-    "respuesta_lista": null
+    "archivo": "chati.txt",
+    "mensaje_inge": "helou madafaker",
+    "respuesta_lista": null,
+    "ultimo_latido": 1794965352.2488744
 }
