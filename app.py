@@ -167,12 +167,18 @@ def consultar_ia_corta(mensaje_usuario):
         method="POST"
     )
 
-    try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            cuerpo = json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as e:
-        detalle = e.read().decode("utf-8", errors="ignore")
-        raise RuntimeError(f"HTTP {e.code}: {detalle}")
+    max_intentos = 3
+    for intento in range(max_intentos):
+        try:
+            with urllib.request.urlopen(req, timeout=12) as resp:
+                cuerpo = json.loads(resp.read().decode("utf-8"))
+            break
+        except urllib.error.HTTPError as e:
+            detalle = e.read().decode("utf-8", errors="ignore")
+            if e.code in (503, 429) and intento < max_intentos - 1:
+                time.sleep(1.5 * (intento + 1))
+                continue
+            raise RuntimeError(f"HTTP {e.code}: {detalle}")
 
     candidatos = cuerpo.get("candidates", [])
     if not candidatos:
