@@ -130,6 +130,34 @@ def generar_respuesta_ia(texto_usuario, historial):
     else:
         return random.choice(RESPUESTAS_GENERALES)
 
+def obtener_modelo_groq(api_key):
+    preferidos = [
+        "llama-3.1-8b-instant",
+        "llama-3.3-70b-versatile",
+        "gemma2-9b-it",
+        "mixtral-8x7b-32768"
+    ]
+    req = urllib.request.Request(
+        "https://api.groq.com/openai/v1/models",
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "User-Agent": "Mozilla/5.0"
+        },
+        method="GET"
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        disponibles = [m.get("id") for m in data.get("data", []) if m.get("id")]
+        for pref in preferidos:
+            if pref in disponibles:
+                return pref
+        if disponibles:
+            return disponibles[0]
+    except Exception:
+        pass
+    return "llama-3.1-8b-instant"
+
 def consultar_ia_corta(mensaje_usuario):
     api_key = (
         os.environ.get("GROQ_API_KEY")
@@ -138,9 +166,10 @@ def consultar_ia_corta(mensaje_usuario):
     if not api_key:
         raise ValueError("Falta configurar la API key de Groq.")
 
+    modelo = obtener_modelo_groq(api_key)
     url = "https://api.groq.com/openai/v1/chat/completions"
     payload = {
-        "model": "llama-3.3-70b-versatile",
+        "model": modelo,
         "messages": [
             {
                 "role": "system",
@@ -180,7 +209,7 @@ def consultar_ia_corta(mensaje_usuario):
             if e.code in (503, 429) and intento < max_intentos - 1:
                 time.sleep(1.5 * (intento + 1))
                 continue
-            raise RuntimeError(f"HTTP {e.code}: {detalle}")
+            raise RuntimeError(f"HTTP {e.code} ({modelo}): {detalle}")
 
     opciones = cuerpo.get("choices", [])
     if not opciones:
