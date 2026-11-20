@@ -131,39 +131,41 @@ def generar_respuesta_ia(texto_usuario, historial):
         return random.choice(RESPUESTAS_GENERALES)
 
 def consultar_ia_corta(mensaje_usuario):
-    api_key = (os.environ.get("GEMINI_API_KEY") or "AQ.Ab8RN6KB_r3ZkOubz7zV25a_1v8crZ3d8IhtVkOAfSCUMp6Ozg").strip()
+    api_key = (
+        os.environ.get("GROQ_API_KEY")
+        or "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"
+    ).strip()
     if not api_key:
-        raise ValueError("Falta configurar la API key de Gemini.")
+        raise ValueError("Falta configurar la API key de Groq.")
 
-    modelo = "gemini-3.8-flash"
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent?key={api_key}"
+    url = "https://api.groq.com/openai/v1/chat/completions"
     payload = {
-        "systemInstruction": {
-            "parts": [
-                {
-                    "text": (
-                        "Responde en español de forma muy corta, directa y concreta "
-                        "(máximo 1 o 2 oraciones breves, sin rodeos ni listas largas)."
-                    )
-                }
-            ]
-        },
-        "contents": [
+        "model": "llama-3.3-70b-versatile",
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "Responde en español de forma muy corta, directa y concreta "
+                    "(máximo 1 o 2 oraciones breves, sin rodeos ni listas largas)."
+                )
+            },
             {
                 "role": "user",
-                "parts": [{"text": mensaje_usuario}]
+                "content": mensaje_usuario
             }
         ],
-        "generationConfig": {
-            "temperature": 0.4,
-            "maxOutputTokens": 90
-        }
+        "temperature": 0.4,
+        "max_tokens": 90
     }
 
     req = urllib.request.Request(
         url,
         data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+            "User-Agent": "Mozilla/5.0"
+        },
         method="POST"
     )
 
@@ -180,12 +182,11 @@ def consultar_ia_corta(mensaje_usuario):
                 continue
             raise RuntimeError(f"HTTP {e.code}: {detalle}")
 
-    candidatos = cuerpo.get("candidates", [])
-    if not candidatos:
-        raise RuntimeError("La API no devolvió candidatos de respuesta.")
+    opciones = cuerpo.get("choices", [])
+    if not opciones:
+        raise RuntimeError("La API no devolvió opciones de respuesta.")
 
-    partes = candidatos[0].get("content", {}).get("parts", [])
-    texto_ia = " ".join(p.get("text", "").strip() for p in partes if p.get("text")).strip()
+    texto_ia = (opciones[0].get("message", {}).get("content") or "").strip()
     if not texto_ia:
         raise RuntimeError("La respuesta de la API llegó vacía.")
 
