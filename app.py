@@ -33,7 +33,7 @@ DIAS_SEMANA = [
     "Viernes", "Sábado", "Domingo"
 ]
 
-# Repertorio automático en Python cuando no hay operador conectado o falla la API
+# Repertorio automático en Python cuando no hay operador conectado o falla la API tras reintentos
 RESPUESTAS_ILEGIBLES = [
     "Mejora tu caligrafía, no se entiende nada de lo que escribiste jajaa.",
     "¿Eso es escritura o te dio un ataque al teclado? Aprende a escribir bien.",
@@ -136,10 +136,38 @@ def consultar_ia_corta(mensaje_usuario, historial=None):
         or "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"
     ).strip()
 
-    if api_key:
-        url = "https://api.groq.com/openai/v1/chat/completions"
+    if not api_key:
+        return generar_respuesta_ia(mensaje_usuario, historial or [])
+
+    modelos_candidatos = [
+        "llama-3.1-8b-instant",
+        "llama-3.3-70b-versatile",
+        "gemma2-9b-it"
+    ]
+
+    try:
+        req_models = urllib.request.Request(
+            "https://api.groq.com/openai/v1/models",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "User-Agent": "Mozilla/5.0"
+            },
+            method="GET"
+        )
+        with urllib.request.urlopen(req_models, timeout=6) as resp_m:
+            data_m = json.loads(resp_m.read().decode("utf-8"))
+        disponibles = [m.get("id") for m in data_m.get("data", []) if m.get("id")]
+        for m_id in disponibles:
+            if m_id not in modelos_candidatos:
+                modelos_candidatos.append(m_id)
+    except Exception:
+        pass
+
+    url = "https://api.groq.com/openai/v1/chat/completions"
+
+    for modelo in modelos_candidatos:
         payload = {
-            "model": "llama-3.1-8b-instant",
+            "model": modelo,
             "messages": [
                 {
                     "role": "system",
@@ -168,10 +196,9 @@ def consultar_ia_corta(mensaje_usuario, historial=None):
             method="POST"
         )
 
-        max_intentos = 5
-        for intento in range(max_intentos):
+        for intento in range(3):
             try:
-                with urllib.request.urlopen(req, timeout=8) as resp:
+                with urllib.request.urlopen(req, timeout=10) as resp:
                     cuerpo = json.loads(resp.read().decode("utf-8"))
 
                 opciones = cuerpo.get("choices", [])
@@ -181,13 +208,15 @@ def consultar_ia_corta(mensaje_usuario, historial=None):
                         return texto_ia
             except urllib.error.HTTPError as e:
                 e.read()
-                if e.code in (401, 403, 404):
+                if e.code in (401, 403):
+                    return generar_respuesta_ia(mensaje_usuario, historial or [])
+                if e.code == 404:
                     break
+                if intento < 2:
+                    time.sleep(0.8 * (intento + 1))
             except Exception:
-                pass
-
-            if intento < max_intentos - 1:
-                time.sleep(0.8)
+                if intento < 2:
+                    time.sleep(0.8 * (intento + 1))
 
     return generar_respuesta_ia(mensaje_usuario, historial or [])
 
