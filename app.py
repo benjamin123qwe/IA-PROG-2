@@ -135,7 +135,7 @@ def consultar_ia_corta(mensaje_usuario):
     if not api_key:
         raise ValueError("Falta configurar la API key de Gemini.")
 
-    modelo = "gemini-2.5-flash"
+    modelo = "gemini-3.8-flash"
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent?key={api_key}"
     payload = {
         "systemInstruction": {
