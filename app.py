@@ -33,7 +33,7 @@ DIAS_SEMANA = [
     "Viernes", "Sábado", "Domingo"
 ]
 
-# Repertorio automático en Python cuando no hay operador conectado
+# Repertorio automático en Python cuando no hay operador conectado o falla la API
 RESPUESTAS_ILEGIBLES = [
     "Mejora tu caligrafía, no se entiende nada de lo que escribiste jajaa.",
     "¿Eso es escritura o te dio un ataque al teclado? Aprende a escribir bien.",
@@ -130,96 +130,66 @@ def generar_respuesta_ia(texto_usuario, historial):
     else:
         return random.choice(RESPUESTAS_GENERALES)
 
-def obtener_modelo_groq(api_key):
-    preferidos = [
-        "llama-3.1-8b-instant",
-        "llama-3.3-70b-versatile",
-        "gemma2-9b-it",
-        "mixtral-8x7b-32768"
-    ]
-    req = urllib.request.Request(
-        "https://api.groq.com/openai/v1/models",
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "User-Agent": "Mozilla/5.0"
-        },
-        method="GET"
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=8) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-        disponibles = [m.get("id") for m in data.get("data", []) if m.get("id")]
-        for pref in preferidos:
-            if pref in disponibles:
-                return pref
-        if disponibles:
-            return disponibles[0]
-    except Exception:
-        pass
-    return "llama-3.1-8b-instant"
-
-def consultar_ia_corta(mensaje_usuario):
+def consultar_ia_corta(mensaje_usuario, historial=None):
     api_key = (
         os.environ.get("GROQ_API_KEY")
         or "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"
     ).strip()
-    if not api_key:
-        raise ValueError("Falta configurar la API key de Groq.")
 
-    modelo = obtener_modelo_groq(api_key)
-    url = "https://api.groq.com/openai/v1/chat/completions"
-    payload = {
-        "model": modelo,
-        "messages": [
-            {
-                "role": "system",
-                "content": (
-                    "Responde en español de forma muy corta, directa y concreta "
-                    "(máximo 1 o 2 oraciones breves, sin rodeos ni listas largas)."
-                )
+    if api_key:
+        url = "https://api.groq.com/openai/v1/chat/completions"
+        payload = {
+            "model": "llama-3.1-8b-instant",
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "Responde en español de forma muy corta, directa y concreta "
+                        "(máximo 1 o 2 oraciones breves, sin rodeos ni listas largas)."
+                    )
+                },
+                {
+                    "role": "user",
+                    "content": mensaje_usuario
+                }
+            ],
+            "temperature": 0.4,
+            "max_tokens": 90
+        }
+
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {api_key}",
+                "User-Agent": "Mozilla/5.0"
             },
-            {
-                "role": "user",
-                "content": mensaje_usuario
-            }
-        ],
-        "temperature": 0.4,
-        "max_tokens": 90
-    }
+            method="POST"
+        )
 
-    req = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}",
-            "User-Agent": "Mozilla/5.0"
-        },
-        method="POST"
-    )
+        max_intentos = 5
+        for intento in range(max_intentos):
+            try:
+                with urllib.request.urlopen(req, timeout=8) as resp:
+                    cuerpo = json.loads(resp.read().decode("utf-8"))
 
-    max_intentos = 3
-    for intento in range(max_intentos):
-        try:
-            with urllib.request.urlopen(req, timeout=12) as resp:
-                cuerpo = json.loads(resp.read().decode("utf-8"))
-            break
-        except urllib.error.HTTPError as e:
-            detalle = e.read().decode("utf-8", errors="ignore")
-            if e.code in (503, 429) and intento < max_intentos - 1:
-                time.sleep(1.5 * (intento + 1))
-                continue
-            raise RuntimeError(f"HTTP {e.code} ({modelo}): {detalle}")
+                opciones = cuerpo.get("choices", [])
+                if opciones:
+                    texto_ia = (opciones[0].get("message", {}).get("content") or "").strip()
+                    if texto_ia:
+                        return texto_ia
+            except urllib.error.HTTPError as e:
+                e.read()
+                if e.code in (401, 403, 404):
+                    break
+            except Exception:
+                pass
 
-    opciones = cuerpo.get("choices", [])
-    if not opciones:
-        raise RuntimeError("La API no devolvió opciones de respuesta.")
+            if intento < max_intentos - 1:
+                time.sleep(0.8)
 
-    texto_ia = (opciones[0].get("message", {}).get("content") or "").strip()
-    if not texto_ia:
-        raise RuntimeError("La respuesta de la API llegó vacía.")
-
-    return texto_ia
+    return generar_respuesta_ia(mensaje_usuario, historial or [])
 
 def leer_titulo_chat(ruta_archivo):
     if not os.path.exists(ruta_archivo):
@@ -409,13 +379,12 @@ def operador_ia_real():
     if not mensaje_inge:
         return jsonify({"error": "No hay mensaje pendiente para responder."}), 400
 
-    try:
-        respuesta_corta = consultar_ia_corta(mensaje_inge)
-    except ValueError as err:
-        return jsonify({"error": str(err)}), 400
-    except Exception as err:
-        return jsonify({"error": f"Error al consultar la IA: {err}"}), 502
+    historial = []
+    if estado.get("archivo"):
+        ruta_chat = os.path.join(CARPETA_CHATS, os.path.basename(estado["archivo"]))
+        historial = leer_conversacion(ruta_chat)
 
+    respuesta_corta = consultar_ia_corta(mensaje_inge, historial)
     estado["respuesta_lista"] = respuesta_corta
     guardar_estado_humano(estado)
     return jsonify({"ok": True, "respuesta": respuesta_corta})
