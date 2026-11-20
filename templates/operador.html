@@ -21,13 +21,13 @@
     .label { font-size: 0.8rem; color: #8696a0; margin-bottom: 4px; }
     .card.activo .label { color: #00a884; font-weight: bold; }
     .msg-inge { font-size: 1.1rem; font-weight: bold; color: #fff; word-wrap: break-word; }
-    
+
     textarea {
       width: 100%; height: 90px; background: #2a3942; color: #fff;
       border: 1px solid #374852; border-radius: 8px; padding: 10px; font-size: 1rem;
       box-sizing: border-box; resize: none; outline: none;
     }
-    
+
     .btn-main {
       background: #00a884; color: #111b21; border: none; padding: 12px;
       border-radius: 8px; font-size: 1rem; font-weight: bold; width: 100%; cursor: pointer;
@@ -43,23 +43,33 @@
       border-color: #38ef7d;
     }
 
-    button:disabled, .btn-ambigua:disabled { 
-      opacity: 0.35; 
+    .btn-ia-real {
+      background: #2b2147; color: #c4b5fd; border: 1px solid #7c3aed;
+      padding: 14px; border-radius: 8px; font-size: 1.05rem; font-weight: bold;
+      cursor: pointer; text-align: center; width: 100%; transition: 0.2s;
+    }
+    .btn-ia-real:hover:not(:disabled) {
+      background: #382a5e;
+      border-color: #a78bfa;
+    }
+
+    button:disabled, .btn-ambigua:disabled, .btn-ia-real:disabled {
+      opacity: 0.35;
       cursor: not-allowed;
     }
   </style>
 </head>
 <body>
   <div id="caja-estado" class="card">
-    <div class="label" id="estado-texto">Esperando mensaje ...</div>
+    <div class="label" id="estado-texto">Esperando mensaje del ingeniero...</div>
     <div class="msg-inge" id="texto-inge">—</div>
   </div>
 
-  <!-- El textarea ya NO tiene disabled para que puedas escribir por adelantado -->
-  <textarea id="respuesta-input" placeholder="Escribe tu respuesta aquí ..."></textarea>
+  <textarea id="respuesta-input" placeholder="Escribe tu respuesta aquí (puedes ir redactando antes)..."></textarea>
   <button id="btn-responder" class="btn-main" disabled>Enviar respuesta</button>
 
   <button id="btn-ambigua" class="btn-ambigua" onclick="enviarAmbiguaInteligente()" disabled>Respuesta Automatica</button>
+  <button id="btn-ia-real" class="btn-ia-real" onclick="pedirRespuestaIaReal()" disabled>Respuesta de IA Real Cuidao</button>
 
   <script>
     const cajaEstado = document.getElementById("caja-estado");
@@ -68,7 +78,9 @@
     const inputResp = document.getElementById("respuesta-input");
     const btnResp = document.getElementById("btn-responder");
     const btnAmbigua = document.getElementById("btn-ambigua");
+    const btnIaReal = document.getElementById("btn-ia-real");
     let yaNotificado = false;
+    let solicitandoIa = false;
 
     const respuestasIlegibles = [
       "Mejora tu caligrafía, no se entiende nada de lo que escribiste jajaa.",
@@ -98,6 +110,12 @@
       "Eso no te importa en lo absoluto, así de simple."
     ];
 
+    function establecerBotonesHabilitados(habilitar) {
+      btnResp.disabled = !habilitar;
+      btnAmbigua.disabled = !habilitar;
+      btnIaReal.disabled = !habilitar;
+    }
+
     function esPalabraValida(texto) {
       const limpio = texto.toLowerCase().trim();
       if (limpio.length < 2) return true;
@@ -118,6 +136,7 @@
     }
 
     setInterval(async () => {
+      if (solicitandoIa) return;
       try {
         const res = await fetch("/api/operador/estado");
         const data = await res.json();
@@ -126,8 +145,7 @@
           cajaEstado.classList.add("activo");
           estadoTexto.textContent = "Mensaje a responder:";
           textoInge.textContent = data.mensaje_inge;
-          btnResp.disabled = false;
-          btnAmbigua.disabled = false;
+          establecerBotonesHabilitados(true);
 
           if (!yaNotificado) {
             if (navigator.vibrate) navigator.vibrate([150, 80, 150]);
@@ -137,8 +155,7 @@
           cajaEstado.classList.remove("activo");
           estadoTexto.textContent = "Esperando mensaje ...";
           textoInge.textContent = "—";
-          btnResp.disabled = true;
-          btnAmbigua.disabled = true;
+          establecerBotonesHabilitados(false);
           yaNotificado = false;
         }
       } catch (err) {}
@@ -147,8 +164,7 @@
     async function enviarTexto(texto) {
       if (!texto || btnResp.disabled) return;
 
-      btnResp.disabled = true;
-      btnAmbigua.disabled = true;
+      establecerBotonesHabilitados(false);
 
       await fetch("/api/operador/enviar", {
         method: "POST",
@@ -156,6 +172,36 @@
         body: JSON.stringify({ respuesta: texto })
       });
       inputResp.value = "";
+    }
+
+    async function pedirRespuestaIaReal() {
+      if (btnIaReal.disabled || solicitandoIa) return;
+      const mensajeActual = textoInge.textContent.trim();
+      if (!mensajeActual || mensajeActual === "—") return;
+
+      solicitandoIa = true;
+      establecerBotonesHabilitados(false);
+      const textoOriginalBoton = btnIaReal.textContent;
+      btnIaReal.textContent = "⏳ Consultando IA...";
+
+      try {
+        const res = await fetch("/api/operador/ia-real", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mensaje: mensajeActual })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.respuesta) {
+          alert(data.error || "No se pudo obtener respuesta de la IA.");
+          establecerBotonesHabilitados(true);
+        }
+      } catch (err) {
+        alert("Error de conexión al consultar la IA.");
+        establecerBotonesHabilitados(true);
+      } finally {
+        btnIaReal.textContent = textoOriginalBoton;
+        solicitandoIa = false;
+      }
     }
 
     btnResp.addEventListener("click", () => {
@@ -186,7 +232,6 @@
     inputResp.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
-        // Solo envía con Enter si el botón está habilitado (hay mensaje pendiente)
         if (!btnResp.disabled) {
           enviarTexto(inputResp.value.trim());
         }

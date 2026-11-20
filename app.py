@@ -7,6 +7,8 @@ import time
 import json
 import re
 import random
+import urllib.request
+import urllib.error
 from datetime import datetime
 from flask import Flask, render_template, request, jsonify
 
@@ -127,6 +129,56 @@ def generar_respuesta_ia(texto_usuario, historial):
         return random.choice(RESPUESTAS_PREGUNTA)
     else:
         return random.choice(RESPUESTAS_GENERALES)
+
+def consultar_ia_corta(mensaje_usuario):
+    api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+    if not api_key:
+        raise ValueError("Falta configurar la variable de entorno GEMINI_API_KEY.")
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+    payload = {
+        "systemInstruction": {
+            "parts": [
+                {
+                    "text": (
+                        "Responde en español de forma muy corta, directa y concreta "
+                        "(máximo 1 o 2 oraciones breves, sin rodeos ni listas largas)."
+                    )
+                }
+            ]
+        },
+        "contents": [
+            {
+                "role": "user",
+                "parts": [{"text": mensaje_usuario}]
+            }
+        ],
+        "generationConfig": {
+            "temperature": 0.4,
+            "maxOutputTokens": 90
+        }
+    }
+
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST"
+    )
+
+    with urllib.request.urlopen(req, timeout=20) as resp:
+        cuerpo = json.loads(resp.read().decode("utf-8"))
+
+    candidatos = cuerpo.get("candidates", [])
+    if not candidatos:
+        raise RuntimeError("La API no devolvió candidatos de respuesta.")
+
+    partes = candidatos[0].get("content", {}).get("parts", [])
+    texto_ia = " ".join(p.get("text", "").strip() for p in partes if p.get("text")).strip()
+    if not texto_ia:
+        raise RuntimeError("La respuesta de la API llegó vacía.")
+
+    return texto_ia
 
 def leer_titulo_chat(ruta_archivo):
     if not os.path.exists(ruta_archivo):
@@ -303,6 +355,29 @@ def operador_enviar():
     estado["respuesta_lista"] = respuesta
     guardar_estado_humano(estado)
     return jsonify({"ok": True})
+
+@app.route("/api/operador/ia-real", methods=["POST"])
+def operador_ia_real():
+    datos = request.get_json(silent=True) or {}
+    mensaje_inge = (datos.get("mensaje") or "").strip()
+
+    estado = cargar_estado_humano()
+    if not mensaje_inge:
+        mensaje_inge = (estado.get("mensaje_inge") or "").strip()
+
+    if not mensaje_inge:
+        return jsonify({"error": "No hay mensaje pendiente para responder."}), 400
+
+    try:
+        respuesta_corta = consultar_ia_corta(mensaje_inge)
+    except ValueError as err:
+        return jsonify({"error": str(err)}), 400
+    except Exception as err:
+        return jsonify({"error": f"Error al consultar la IA: {err}"}), 502
+
+    estado["respuesta_lista"] = respuesta_corta
+    guardar_estado_humano(estado)
+    return jsonify({"ok": True, "respuesta": respuesta_corta})
 
 @app.route("/api/chats/<archivo>", methods=["DELETE"])
 def borrar_chat(archivo):
