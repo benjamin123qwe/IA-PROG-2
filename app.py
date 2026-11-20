@@ -131,9 +131,9 @@ def generar_respuesta_ia(texto_usuario, historial):
         return random.choice(RESPUESTAS_GENERALES)
 
 def consultar_ia_corta(mensaje_usuario):
-    api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+    api_key = (os.environ.get("GEMINI_API_KEY") or "AQ.Ab8RN6KB_r3ZkOubz7zV25a_1v8crZ3d8IhtVkOAfSCUMp6Ozg").strip()
     if not api_key:
-        raise ValueError("Falta configurar la variable de entorno GEMINI_API_KEY.")
+        raise ValueError("Falta configurar la API key de Gemini.")
 
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
     payload = {
