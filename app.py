@@ -135,7 +135,7 @@ def consultar_ia_corta(mensaje_usuario):
     if not api_key:
         raise ValueError("Falta configurar la API key de Gemini.")
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+    modelos = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-flash-latest"]
     payload = {
         "systemInstruction": {
             "parts": [
@@ -159,26 +159,37 @@ def consultar_ia_corta(mensaje_usuario):
         }
     }
 
-    req = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST"
-    )
+    ultimo_error = "No se pudo conectar con ningún modelo."
 
-    with urllib.request.urlopen(req, timeout=20) as resp:
-        cuerpo = json.loads(resp.read().decode("utf-8"))
+    for modelo in modelos:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent?key={api_key}"
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST"
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                cuerpo = json.loads(resp.read().decode("utf-8"))
 
-    candidatos = cuerpo.get("candidates", [])
-    if not candidatos:
-        raise RuntimeError("La API no devolvió candidatos de respuesta.")
+            candidatos = cuerpo.get("candidates", [])
+            if not candidatos:
+                continue
 
-    partes = candidatos[0].get("content", {}).get("parts", [])
-    texto_ia = " ".join(p.get("text", "").strip() for p in partes if p.get("text")).strip()
-    if not texto_ia:
-        raise RuntimeError("La respuesta de la API llegó vacía.")
+            partes = candidatos[0].get("content", {}).get("parts", [])
+            texto_ia = " ".join(p.get("text", "").strip() for p in partes if p.get("text")).strip()
+            if texto_ia:
+                return texto_ia
 
-    return texto_ia
+        except urllib.error.HTTPError as e:
+            detalle = e.read().decode("utf-8", errors="ignore")
+            ultimo_error = f"HTTP {e.code} ({modelo}): {detalle}"
+            if e.code == 404:
+                continue
+            raise RuntimeError(ultimo_error)
+
+    raise RuntimeError(ultimo_error)
 
 def leer_titulo_chat(ruta_archivo):
     if not os.path.exists(ruta_archivo):
